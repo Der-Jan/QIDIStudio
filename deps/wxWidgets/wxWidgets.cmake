@@ -23,12 +23,18 @@ endif ()
 #     set(_patch_cmd test -f WXWIDGETS_PATCHED || ${PATCH_CMD} ${CMAKE_CURRENT_LIST_DIR}/0001-wxWidget-fix.patch && touch WXWIDGETS_PATCHED)
 # endif ()
 
+set(_wx_precomp ON)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.0")
+    # The bundled cotire test project requires CMake's removed pre-3.5 policies.
+    set(_wx_precomp OFF)
+endif()
+
 qidistudio_add_cmake_project(wxWidgets
     GIT_REPOSITORY "https://github.com/bambulab/wxWidgets"
     GIT_TAG master
     DEPENDS ${PNG_PKG} ${ZLIB_PKG} ${EXPAT_PKG} ${TIFF_PKG} ${JPEG_PKG}
     CMAKE_ARGS
-        -DwxBUILD_PRECOMP=ON
+        -DwxBUILD_PRECOMP=${_wx_precomp}
         ${_wx_toolkit}
         "-DCMAKE_DEBUG_POSTFIX:STRING="
         -DwxBUILD_DEBUG_LEVEL=0

@@ -11,7 +11,7 @@ function(prepare_node_env)
     set(PNPM_VERSION "10.12.1")
 
     # 定义本地缓存目录（放在项目同级目录，clean build 后不会丢失）
-    set(NODE_CACHE_DIR "${CMAKE_SOURCE_DIR}/../node-cache")
+    set(NODE_CACHE_DIR "${CMAKE_SOURCE_DIR}/../node-cache" CACHE PATH "Node.js and pnpm download cache")
 
     # 根据平台确定下载 URL、文件名和 hash 值
     if(WIN32)
@@ -180,7 +180,7 @@ set(PNPM_STORE_DIR "${CMAKE_CURRENT_BINARY_DIR}/.pnpm-store")
 file(MAKE_DIRECTORY "${PNPM_STORE_DIR}")
 
 add_custom_target(device_page_build ALL
-    COMMAND ${CMAKE_COMMAND} -E env "PATH=${DEVICE_PAGE_PATH}" "PNPM_STORE_DIR=${PNPM_STORE_DIR}" ${PNPM_EXECUTABLE} install
+    COMMAND ${CMAKE_COMMAND} -E env "PATH=${DEVICE_PAGE_PATH}" ${PNPM_EXECUTABLE} install --store-dir "${PNPM_STORE_DIR}"
     COMMAND ${CMAKE_COMMAND} -E env "PATH=${DEVICE_PAGE_PATH}" "PNPM_STORE_DIR=${PNPM_STORE_DIR}" ${PNPM_EXECUTABLE} run build
     COMMAND  ${CMAKE_COMMAND} -E make_directory "${DEVICE_PAGE_TARGET_DIR}"
     COMMAND  ${CMAKE_COMMAND} -E copy_directory "${DEVICE_PAGE_DIST_DIR}" "${DEVICE_PAGE_TARGET_DIR}"
