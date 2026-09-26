@@ -19,6 +19,7 @@
 #include <wx/stattext.h>
 #include <wx/stdpaths.h>
 #include <wx/textctrl.h>
+#include <wx/tokenzr.h>
 #include <wx/utils.h>
 
 #include <algorithm>
@@ -54,6 +55,13 @@ wxString join_lines(const wxArrayString& lines)
     return result;
 }
 
+wxString shell_quote(const wxString& value)
+{
+    wxString escaped = value;
+    escaped.Replace("'", "'\\''");
+    return "'" + escaped + "'";
+}
+
 bool is_valid_tunnel_id(const wxString& value)
 {
     const std::string id = into_u8(value);
@@ -81,7 +89,7 @@ TunnelManagerDialog::TunnelManagerDialog(wxWindow* parent)
     wxBoxSizer* root = new wxBoxSizer(wxVERTICAL);
 
     wxStaticText* intro = new wxStaticText(this, wxID_ANY,
-        _L("Connect this QIDI Studio MCP server to ChatGPT. The Runtime API key is encrypted with Windows DPAPI and is never stored in QIDI Studio."));
+        _L("Connect this QIDI Studio MCP server to ChatGPT. The Runtime API key is stored in the operating system credential store and is never saved in QIDI Studio."));
     intro->Wrap(650);
     root->Add(intro, 0, wxEXPAND | wxALL, 12);
 
@@ -90,7 +98,11 @@ TunnelManagerDialog::TunnelManagerDialog(wxWindow* parent)
     status_grid->Add(new wxStaticText(this, wxID_ANY, _L("Overall:")), 0, wxALIGN_CENTER_VERTICAL);
     m_overall_status = new wxStaticText(this, wxID_ANY, _L("Checking..."));
     status_grid->Add(m_overall_status, 1, wxEXPAND);
+#ifdef _WIN32
     status_grid->Add(new wxStaticText(this, wxID_ANY, _L("Scheduled task:")), 0, wxALIGN_CENTER_VERTICAL);
+#else
+    status_grid->Add(new wxStaticText(this, wxID_ANY, _L("User service:")), 0, wxALIGN_CENTER_VERTICAL);
+#endif
     m_task_status = new wxStaticText(this, wxID_ANY, "-");
     status_grid->Add(m_task_status, 1, wxEXPAND);
     status_grid->Add(new wxStaticText(this, wxID_ANY, _L("Heartbeat:")), 0, wxALIGN_CENTER_VERTICAL);
@@ -178,11 +190,8 @@ TunnelManagerDialog::TunnelManagerDialog(wxWindow* parent)
 bool TunnelManagerDialog::run_script(const wxString& script_name, const wxString& arguments,
                                      const wxString& secret, wxString& output, wxString& error) const
 {
-#ifndef _WIN32
-    error = _L("The integrated tunnel manager currently supports Windows only.");
-    return false;
-#else
     const wxFileName executable(wxStandardPaths::Get().GetExecutablePath());
+#ifdef _WIN32
     const wxFileName script(executable.GetPath() + wxFILE_SEP_PATH + "mcp-tunnel", script_name);
     if (!script.FileExists()) {
         error = wxString::Format(_L("Tunnel component was not found: %s"), script.GetFullPath());
@@ -203,19 +212,52 @@ bool TunnelManagerDialog::run_script(const wxString& script_name, const wxString
     const long exit_code = wxExecute(command, stdout_lines, stderr_lines,
                                      wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE, &environment);
     environment.env.erase(secret_name);
+#elif defined(__linux__)
+    wxString linux_script_name = script_name;
+    if (linux_script_name == "manage-qidi-mcp-tunnel.ps1")
+        linux_script_name = "manage-qidi-mcp-tunnel.sh";
+    else if (linux_script_name == "setup-qidi-mcp-tunnel.ps1")
+        linux_script_name = "setup-qidi-mcp-tunnel.sh";
+    const wxFileName script(executable.GetPath() + wxFILE_SEP_PATH + "mcp-tunnel", linux_script_name);
+    if (!script.FileExists()) {
+        error = wxString::Format(_L("Tunnel component was not found: %s"), script.GetFullPath());
+        return false;
+    }
+    wxString command = "/bin/bash " + shell_quote(script.GetFullPath());
+    wxArrayString words = wxStringTokenize(arguments, " \t\n", wxTOKEN_STRTOK);
+    for (const wxString& word : words)
+        command += " " + shell_quote(word);
+    wxExecuteEnv environment;
+    wxGetEnvMap(&environment.env);
+    const wxString secret_name = "QIDI_MCP_RUNTIME_API_KEY";
+    if (!secret.empty())
+        environment.env[secret_name] = secret;
+    wxArrayString stdout_lines;
+    wxArrayString stderr_lines;
+    const long exit_code = wxExecute(command, stdout_lines, stderr_lines,
+                                     wxEXEC_SYNC, &environment);
+    environment.env.erase(secret_name);
+#else
+    error = _L("The integrated tunnel manager is not available on this platform.");
+    return false;
+#endif
     output = join_lines(stdout_lines);
     error = join_lines(stderr_lines);
     if (exit_code == -1 && error.empty())
-        error = _L("PowerShell could not be started.");
+        error = _L("The tunnel management script could not be started.");
     return exit_code == 0;
-#endif
 }
 
 void TunnelManagerDialog::refresh_status()
 {
     wxString output;
     wxString error;
-    if (!run_script("manage-qidi-mcp-tunnel.ps1", "-Action status", wxEmptyString, output, error)) {
+#ifdef _WIN32
+    const wxString status_arguments = "-Action status";
+#else
+    const wxString status_arguments = "--action status";
+#endif
+    if (!run_script("manage-qidi-mcp-tunnel.ps1", status_arguments, wxEmptyString, output, error)) {
         m_tunnel_configured = false;
         m_credentials_configured = false;
         m_overall_status->SetLabel(_L("Unavailable"));
@@ -259,7 +301,11 @@ void TunnelManagerDialog::refresh_status()
             m_heartbeat_status->SetLabel(heartbeat_age.empty() ? _L("Fresh") : from_u8("Fresh (" + heartbeat_age + " seconds ago)"));
         else
             m_heartbeat_status->SetLabel(heartbeat_age.empty() ? _L("Missing or stale") : from_u8("Stale (" + heartbeat_age + " seconds ago)"));
+#ifdef _WIN32
         m_credential_status->SetLabel(credentials ? _L("DPAPI key configured") : _L("Not configured"));
+#else
+        m_credential_status->SetLabel(credentials ? _L("Keyring key configured") : _L("Not configured"));
+#endif
         if (!tunnel_id.empty() && !m_tunnel_id->HasFocus())
             m_tunnel_id->ChangeValue(from_u8(tunnel_id));
         m_start_button->Enable(configured && task_state != "Running");
@@ -292,15 +338,20 @@ void TunnelManagerDialog::configure_tunnel()
     }
     const bool replace_api_key = !api_key.empty();
     if (!replace_api_key && (!m_tunnel_configured || !m_credentials_configured)) {
-        wxMessageBox(_L("Enter the Runtime API key because no reusable DPAPI credential is configured."),
+        wxMessageBox(_L("Enter the Runtime API key because no reusable credential is configured."),
                      _L("Runtime API Key Required"), wxOK | wxICON_WARNING, this);
         return;
     }
 
     wxString output;
     wxString error;
+#ifdef _WIN32
     const wxString credential_argument = replace_api_key ? "-FromEnvironment" : "-ReuseExistingCredential";
     const wxString arguments = wxString::Format("-TunnelId \"%s\" %s -SkipBrowser", tunnel_id, credential_argument);
+#else
+    const wxString credential_argument = replace_api_key ? "--from-environment" : "--reuse-existing-credential";
+    const wxString arguments = wxString::Format("--tunnel-id %s %s", tunnel_id, credential_argument);
+#endif
     bool success = false;
     {
         wxBusyInfo busy(replace_api_key ? _L("Configuring the MCP tunnel...") : _L("Repairing the MCP tunnel..."), this);
@@ -312,9 +363,15 @@ void TunnelManagerDialog::configure_tunnel()
     if (!success) {
         wxMessageBox(error.empty() ? output : error, _L("Tunnel Setup Failed"), wxOK | wxICON_ERROR, this);
     } else {
+#ifdef _WIN32
         wxMessageBox(replace_api_key
                          ? _L("The tunnel was configured and started. The Runtime API key is now protected with Windows DPAPI.")
                          : _L("The tunnel was repaired and started using the existing DPAPI-protected Runtime API key."),
+#else
+        wxMessageBox(replace_api_key
+                         ? _L("The tunnel was configured and started. The Runtime API key is now stored in your desktop keyring.")
+                         : _L("The tunnel was repaired and started using the existing desktop keyring credential."),
+#endif
                      _L("MCP Tunnel Connected"), wxOK | wxICON_INFORMATION, this);
     }
     refresh_status();
@@ -327,7 +384,11 @@ void TunnelManagerDialog::run_action(const wxString& action, bool show_success)
     bool success = false;
     {
         wxBusyInfo busy(wxString::Format(_L("Running tunnel action: %s"), action), this);
+#ifdef _WIN32
         success = run_script("manage-qidi-mcp-tunnel.ps1", "-Action " + action, wxEmptyString, output, error);
+#else
+        success = run_script("manage-qidi-mcp-tunnel.ps1", "--action " + action, wxEmptyString, output, error);
+#endif
     }
 
     wxString message = error.empty() ? output : error;

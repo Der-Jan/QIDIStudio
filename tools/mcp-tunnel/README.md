@@ -1,5 +1,17 @@
 # QIDI Studio MCP tunnel companion
 
+## Linux
+
+Linux builds stage the official OpenAI `tunnel-client` v0.0.15 and its bundled `cloudflared` companion next to QIDI Studio. The MCP endpoint remains loopback-only at `http://127.0.0.1:8765/mcp`. The integrated manager uses a per-user `systemd` service (auto-restarts and starts at login) and the desktop Secret Service keyring (`secret-tool`) for the Runtime API key. No administrator privileges are needed.
+
+Requirements: a systemd user session, an unlocked Secret Service-compatible desktop keyring, `secret-tool` (Fedora package `libsecret`, Debian/Ubuntu `libsecret-tools`), and `curl` for readiness status. From the app, open **MCP Tunnel Manager**, enter the tunnel ID and Runtime API key, then choose **Save / Repair and Connect**. The key is stored in the current user's keyring; the generated profile refers only to `env:CONTROL_PLANE_API_KEY`. The service wrapper retrieves the key from the keyring when systemd starts it.
+
+The tunnel client, Cloudflare helper, and license notices are bundled alongside the application. The Linux client archive is from [OpenAI tunnel-client v0.0.15](https://github.com/openai/tunnel-client/releases/tag/v0.0.15); its SHA-256 is `8c836dc5d68d68b663d9a5c5b28ff9fa780d9f7a3fffb1c306880b8f32fab5f1`.
+
+To manage it outside QIDI Studio, run `bash manage-qidi-mcp-tunnel.sh --action status|start|stop|restart|doctor|open-ui|logs` from the staged `mcp-tunnel` directory. The unit is `qidi-studio-mcp-tunnel.service` in the current user's systemd session.
+
+## Windows
+
 The MCP listener remains loopback-only at `http://127.0.0.1:8765/mcp`. The Windows build stages OpenAI's `tunnel-client.exe` and these scripts in the `mcp-tunnel` directory beside QIDI Studio. The tunnel runs independently through the current user's Task Scheduler, starts at logon, and restarts if it exits.
 
 ## Guided setup

@@ -822,6 +822,37 @@ if (WIN32)
     )
 endif()
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(QIDI_MCP_TUNNEL_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tools/mcp-tunnel")
+    set(QIDI_MCP_TUNNEL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/src/mcp-tunnel")
+    set(QIDI_MCP_TUNNEL_FILES
+        tunnel-client
+        cloudflared
+        setup-qidi-mcp-tunnel.sh
+        manage-qidi-mcp-tunnel.sh
+        README.md
+        TUNNEL-CLIENT-LICENSE.txt
+        TUNNEL-CLIENT-NOTICE.txt
+        TUNNEL-CLIENT-LINUX-LICENSES.txt
+    )
+
+    foreach(QIDI_MCP_TUNNEL_FILE IN LISTS QIDI_MCP_TUNNEL_FILES)
+        if (NOT EXISTS "${QIDI_MCP_TUNNEL_SOURCE_DIR}/${QIDI_MCP_TUNNEL_FILE}")
+            message(FATAL_ERROR "Missing QIDI MCP tunnel companion file: ${QIDI_MCP_TUNNEL_FILE}")
+        endif()
+    endforeach()
+
+    add_custom_target(QIDIStudio_mcp_tunnel ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${QIDI_MCP_TUNNEL_OUTPUT_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${QIDI_MCP_TUNNEL_FILES}
+                "${QIDI_MCP_TUNNEL_OUTPUT_DIR}"
+        WORKING_DIRECTORY "${QIDI_MCP_TUNNEL_SOURCE_DIR}"
+        COMMENT "Staging QIDI Studio Linux MCP tunnel companion"
+        VERBATIM
+    )
+endif()
+
 # libslic3r, QIDIStudio GUI and the QIDIStudio executable.
 add_subdirectory(src)
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT QIDIStudio_app_gui)
