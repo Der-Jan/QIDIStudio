@@ -3643,7 +3643,7 @@ void MainFrame::init_menubar_as_editor()
     //m_topbar->AddDropDownMenuItem(printer_item);
     //m_topbar->AddDropDownMenuItem(language_item);
     //m_topbar->AddDropDownMenuItem(config_item);
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__linux__)
     auto mcpMenu = generate_mcp_menu(this);
     m_topbar->AddDropDownSubMenu(mcpMenu, _L("MCP"));
 #endif
